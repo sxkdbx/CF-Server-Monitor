@@ -490,35 +490,34 @@ export default {
     const hour = now.getUTCHours();
     const minute = now.getUTCMinutes();
     
-    if (cron === '*/1 * * * *') {
-      if (day === 0 && hour === 0 && minute < 5) {
-        debug('[Cron] 每周日0:00-0:05表轮换期间，跳过离线节点检测');
-      } else {
-        debug('[Cron] 开始执行离线节点检测');
-        await checkOfflineNodes(env.DB);
-        debug('[Cron] 离线节点检测完成');
-        debug('[Cron] 开始执行资源负载告警检测');
-        await checkResourceAlerts(env);
-        debug('[Cron] 资源负载告警检测完成');
-      }
-    } else if (cron === '0 * * * *') {
-      if (day === 0 && hour === 0) {
-        debug('[Cron] 开始执行每周数据清理任务（表轮换）');
-        await weeklyCleanup(env.DB);
-        debug('[Cron] 每周数据清理任务完成');
-      }
+    // ===== 单 cron 时间路由（需配合 wrangler.toml 仅保留 "*/1 * * * *"）=====
+    const isWeeklyRotationMinute = (day === 0 && hour === 0 && minute === 0);
+    const inRotationWindow = (day === 0 && hour === 0 && minute < 5);
+
+    // ④ 表轮换：每周日 UTC 0:00 整点一次
+    if (isWeeklyRotationMinute) {
+      debug('[Cron] 开始执行每周数据清理任务（表轮换）');
+      await weeklyCleanup(env.DB);
+      debug('[Cron] 每周数据清理任务完成');
+    }
+
+    // ①② 离线检测 + 资源告警：每分钟，表轮换窗口（周日 0:00-0:04）跳过
+    if (inRotationWindow) {
+      debug('[Cron] 每周日0:00-0:04表轮换期间，跳过离线节点与资源告警检测');
+    } else {
+      debug('[Cron] 开始执行离线节点检测');
+      await checkOfflineNodes(env.DB);
+      debug('[Cron] 离线节点检测完成');
+      debug('[Cron] 开始执行资源负载告警检测');
+      await checkResourceAlerts(env);
+      debug('[Cron] 资源负载告警检测完成');
+    }
+
+    // ③ 到期检测：每小时整点一次（函数内部再按配置的通知时间点判断）
+    if (minute === 0) {
       debug('[Cron] 检查是否到达服务器到期检测时间');
       await checkExpiringServers(env.DB, { scheduled: true, now: now.getTime() });
-    }else if(env.DEBUG == 1){
-      if (cron === '0 0 * * 0') {
-        debug('[Cron DEBUG] 开始执行每周数据清理任务（表轮换）');
-        await weeklyCleanup(env.DB);
-        debug('[Cron DEBUG] 每周数据清理任务完成');
-      } else if (cron === '0 12 * * *') {
-        debug('[Cron DEBUG] 开始执行服务器到期检测');
-        await checkExpiringServers(env.DB);
-        debug('[Cron DEBUG] 服务器到期检测完成');
-      }
     }
   }
 };
+//（注：内容由AI生成）
